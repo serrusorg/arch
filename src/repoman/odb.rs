@@ -3,13 +3,15 @@ use repodb_parser::pkg::Pkg;
 use std::{ffi::OsStr, io::BufReader};
 use tar::Archive;
 
-struct OriginalDatabase {
-    name: String,
-    pkgs: Vec<Pkg>,
+use crate::downman;
+
+pub struct OriginalDatabase {
+    pub name: String,
+    pub pkgs: Vec<Pkg>,
 }
 
 impl OriginalDatabase {
-    pub fn new(name: String, database: Vec<u8>) -> Self {
+    pub fn new(name: &str, database: Vec<u8>) -> Self {
         let decoder = GzDecoder::new(database.as_slice());
         let mut pkgs = Vec::new();
 
@@ -26,22 +28,22 @@ impl OriginalDatabase {
             pkgs.push(Pkg::parse(BufReader::new(entry)).unwrap());
         }
 
-        Self { name, pkgs }
+        Self {
+            name: name.to_string(),
+            pkgs,
+        }
     }
 
-    pub fn download(name: String, mirror_list: &Vec<String>) -> Self {
-        let mut bytes = Vec::new();
+    pub fn download(name: &str, mirror_list: &Vec<String>) -> Option<Self> {
         for mirror in mirror_list {
-            let url = format!("{}/x86_64/os/{}.db", mirror, name);
-
-            if let Ok(response) = ureq::get(&url).call() {
-                if let Ok(mut body) = response.into_body().read_to_vec() {
-                    bytes.append(&mut body);
-                    break;
-                }
-            }
+            let url = format!("{}/{}/os/x86_64/{}.db", mirror, name, name);
+            let body = match downman::download(&url, format!("{}.db", name).as_str()) {
+                Some(body) => body,
+                None => continue,
+            };
+            return Some(OriginalDatabase::new(&name.to_string(), body));
         }
 
-        OriginalDatabase::new(name, bytes)
+        None
     }
 }
